@@ -1,10 +1,17 @@
 package com.automicosta.app.ui
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlin.math.max
+import kotlin.math.min
 
 /** Dati principali estratti dalla carta di circolazione italiana/europea. */
 data class LibrettoData(
@@ -35,6 +42,80 @@ fun scanLibretto(
         }
         .addOnFailureListener { onResult(Result.failure(it)) }
         .addOnCompleteListener { recognizer.close() }
+}
+
+/**
+ * Legge un PDF del libretto senza inviarlo a servizi esterni.
+ * Le prime 4 pagine vengono renderizzate localmente e passate all'OCR on-device.
+ */
+fun scanLibrettoPdf(
+    context: Context,
+    uri: Uri,
+    onResult: (Result<LibrettoData>) -> Unit
+) {
+    val mainHandler = Handler(Looper.getMainLooper())
+
+    Thread {
+        val bitmaps = mutableListOf<Bitmap>()
+        try {
+            val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
+                ?: throw IllegalArgumentException("Impossibile aprire il PDF")
+
+            val renderer = PdfRenderer(descriptor)
+            val pagesToRead = min(renderer.pageCount, 4)
+            if (pagesToRead <= 0) throw IllegalArgumentException("Il PDF non contiene pagine leggibili")
+
+            repeat(pagesToRead) { index ->
+                val page = renderer.openPage(index)
+                try {
+                    val longestSide = max(page.width, page.height).coerceAtLeast(1)
+                    val scale = min(2.0f, 2200f / longestSide.toFloat()).coerceAtLeast(1.0f)
+                    val width = (page.width * scale).toInt().coerceAtLeast(1)
+                    val height = (page.height * scale).toInt().coerceAtLeast(1)
+                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    bitmap.eraseColor(Color.WHITE)
+                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    bitmaps += bitmap
+                } finally {
+                    page.close()
+                }
+            }
+            renderer.close()
+            descriptor.close()
+
+            mainHandler.post {
+                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                val texts = mutableListOf<String>()
+
+                fun finish(result: Result<LibrettoData>) {
+                    bitmaps.forEach { if (!it.isRecycled) it.recycle() }
+                    recognizer.close()
+                    onResult(result)
+                }
+
+                fun readPage(index: Int) {
+                    if (index >= bitmaps.size) {
+                        val merged = texts.joinToString("\n\n--- PAGINA PDF ---\n\n")
+                        finish(Result.success(parseLibrettoText(merged)))
+                        return
+                    }
+
+                    val image = InputImage.fromBitmap(bitmaps[index], 0)
+                    recognizer.process(image)
+                        .addOnSuccessListener { result ->
+                            texts += result.text
+                            readPage(index + 1)
+                        }
+                        .addOnFailureListener { error -> finish(Result.failure(error)) }
+                }
+
+                readPage(0)
+            }
+        } catch (error: Throwable) {
+            bitmaps.forEach { if (!it.isRecycled) it.recycle() }
+            mainHandler.post { onResult(Result.failure(error)) }
+        }
+    }.start()
 }
 
 private fun parseLibrettoText(raw: String): LibrettoData {
