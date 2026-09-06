@@ -13,8 +13,8 @@ android {
         applicationId = "com.automicosta.app"
         minSdk = 23
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.3.0"
+        versionCode = 3
+        versionName = "0.4.0"
     }
 
     buildFeatures { compose = true }
@@ -46,4 +46,7 @@ dependencies {
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
+
+    // OCR del libretto interamente sul dispositivo.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 }
