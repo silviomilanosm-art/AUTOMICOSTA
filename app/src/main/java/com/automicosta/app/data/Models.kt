@@ -10,9 +10,22 @@ data class VehicleEntity(
     val brand: String = "",
     val model: String = "",
     val plate: String = "",
+    val vin: String = "",
+    val registrationYear: Int? = null,
+    val firstRegistrationDate: String = "",
     val fuelType: String = "Benzina",
     val currentKm: Int = 0,
-    val purchasePrice: Double? = null
+    val purchaseDate: String = "",
+    val purchasePrice: Double? = null,
+    val tireCount: Int = 4,
+    val frontTireSize: String = "",
+    val rearTireSize: String = "",
+    val engineDisplacementCc: Int? = null,
+    val powerKw: Double? = null,
+    val bodyType: String = "",
+    val color: String = "",
+    val countryOfOrigin: String = "",
+    val notes: String = ""
 )
 
 @Entity(tableName = "expenses")
@@ -38,7 +51,31 @@ data class ReminderEntity(
     val completed: Boolean = false
 )
 
+@Entity(tableName = "maintenance")
+data class MaintenanceEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val vehicleId: Long,
+    val dateEpochDay: Long,
+    val component: String,
+    val workType: String = "Sostituzione",
+    val cost: Double = 0.0,
+    val odometerKm: Int? = null,
+    val workshop: String = "",
+    val partBrand: String = "",
+    val partCode: String = "",
+    val nextDueEpochDay: Long? = null,
+    val nextDueKm: Int? = null,
+    val note: String = ""
+)
+
 val defaultCategories = listOf(
     "Carburante", "Ricarica", "Manutenzione", "Assicurazione", "Bollo",
     "Revisione", "Pneumatici", "Pedaggi", "Parcheggi", "Lavaggio", "Altro"
+)
+
+val maintenanceComponents = listOf(
+    "Tagliando", "Olio motore", "Filtro olio", "Filtro aria", "Filtro abitacolo",
+    "Pastiglie freni", "Dischi freni", "Alternatore", "Batteria", "Cinghia distribuzione",
+    "Catena distribuzione", "Frizione", "Ammortizzatori", "Pneumatici", "Candele",
+    "Liquido refrigerante", "Cambio", "Tergicristalli", "Lampadine", "Altro"
 )
