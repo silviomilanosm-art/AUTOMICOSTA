@@ -74,6 +74,7 @@ val defaultCategories = listOf(
 )
 
 val maintenanceComponents = listOf(
+    "Revisione periodica",
     "Tagliando", "Olio motore", "Filtro olio", "Filtro aria", "Filtro abitacolo",
     "Pastiglie freni", "Dischi freni", "Alternatore", "Batteria", "Cinghia distribuzione",
     "Catena distribuzione", "Frizione", "Ammortizzatori", "Pneumatici", "Candele",
