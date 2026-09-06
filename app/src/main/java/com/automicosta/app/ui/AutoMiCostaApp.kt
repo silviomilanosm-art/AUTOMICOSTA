@@ -3,7 +3,6 @@
 package com.automicosta.app.ui
 
 import android.content.Context
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
@@ -56,9 +56,9 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
     val selected = vehicles.firstOrNull { it.id == selectedId } ?: vehicles.firstOrNull()
 
     LaunchedEffect(vehicles, selectedId) {
-        val id = selectedId ?: vehicles.firstOrNull()?.id
-        if (selectedId == null) selectedId = id
-        vm.selectVehicle(id)
+        val validId = selectedId?.takeIf { id -> vehicles.any { it.id == id } } ?: vehicles.firstOrNull()?.id
+        if (selectedId != validId) selectedId = validId
+        vm.selectVehicle(validId)
     }
 
     val expenses by vm.expenses.collectAsStateWithLifecycle()
@@ -72,6 +72,7 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
     var showReminder by remember { mutableStateOf(false) }
     var vehicleEditor by remember { mutableStateOf<VehicleEntity?>(null) }
     var showNewVehicle by remember { mutableStateOf(false) }
+    var vehicleToDelete by remember { mutableStateOf<VehicleEntity?>(null) }
 
     if (vehicles.isEmpty() && !showNewVehicle) showNewVehicle = true
 
@@ -94,13 +95,7 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
                     NavigationBarItem(selected = tab == Tab.SPESE, onClick = { tab = Tab.SPESE }, icon = { Icon(Icons.Default.ReceiptLong, null) }, label = { Text("Spese") })
                     NavigationBarItem(selected = tab == Tab.MANUTENZIONE, onClick = { tab = Tab.MANUTENZIONE }, icon = { Icon(Icons.Default.Build, null) }, label = { Text("Manut.") })
                 }
-                Text(
-                    COPYRIGHT,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
+                Text(COPYRIGHT, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         },
         floatingActionButton = {
@@ -120,7 +115,14 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
             when {
                 vehicles.isEmpty() -> EmptyState("Aggiungi il primo veicolo", "Puoi gestire fino a 5 veicoli in AUTOMICOSTA.")
                 tab == Tab.HOME -> Dashboard(selected!!, expenses, maintenance, reminders.size, onMaintenance = { tab = Tab.MANUTENZIONE }, onReminders = { tab = Tab.SCADENZE })
-                tab == Tab.VEICOLI -> VehicleList(vehicles, selected?.id, onSelect = { selectedId = it.id; vm.selectVehicle(it.id) }, onEdit = { vm.resetVinLookup(); vehicleEditor = it }, onAdd = { if (vehicles.size < 5) { vm.resetVinLookup(); showNewVehicle = true } })
+                tab == Tab.VEICOLI -> VehicleList(
+                    vehicles = vehicles,
+                    selectedId = selected?.id,
+                    onSelect = { selectedId = it.id; vm.selectVehicle(it.id) },
+                    onEdit = { vm.resetVinLookup(); vehicleEditor = it },
+                    onDelete = { vehicleToDelete = it },
+                    onAdd = { if (vehicles.size < 5) { vm.resetVinLookup(); showNewVehicle = true } }
+                )
                 tab == Tab.SPESE -> ExpenseList(expenses)
                 tab == Tab.MANUTENZIONE -> MaintenanceList(maintenance)
                 tab == Tab.SCADENZE -> ReminderList(reminders.map { it.title to Pair(it.dueKm, it.dueEpochDay) })
@@ -133,9 +135,7 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
             existing = vehicleEditor,
             vinState = vinState,
             onLookupVin = vm::lookupVin,
-            onDismiss = {
-                if (vehicles.isNotEmpty()) { showNewVehicle = false; vehicleEditor = null; vm.resetVinLookup() }
-            },
+            onDismiss = { if (vehicles.isNotEmpty()) { showNewVehicle = false; vehicleEditor = null; vm.resetVinLookup() } },
             onSave = { vehicle ->
                 vm.saveVehicle(vehicle) { ok ->
                     if (ok) { showNewVehicle = false; vehicleEditor = null; vm.resetVinLookup() }
@@ -144,14 +144,31 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
         )
     }
 
-    if (showExpense && selected != null) {
-        AddExpenseDialog(
-            onDismiss = { showExpense = false },
-            onSave = { category, amount, km, qty, unitPrice, note, date ->
-                vm.addExpense(selected.id, category, amount, km, qty, unitPrice, note, parseDate(date))
-                showExpense = false
-            }
+    vehicleToDelete?.let { vehicle ->
+        AlertDialog(
+            onDismissRequest = { vehicleToDelete = null },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+            title = { Text("Eliminare ${vehicle.nickname}?") },
+            text = { Text("Verranno eliminati definitivamente questo veicolo e tutti i suoi dati collegati: spese, manutenzioni e scadenze. Gli altri veicoli non saranno modificati.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (selectedId == vehicle.id) selectedId = null
+                        vm.deleteVehicle(vehicle.id)
+                        vehicleToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Elimina definitivamente") }
+            },
+            dismissButton = { TextButton(onClick = { vehicleToDelete = null }) { Text("Annulla") } }
         )
+    }
+
+    if (showExpense && selected != null) {
+        AddExpenseDialog(onDismiss = { showExpense = false }) { category, amount, km, qty, unitPrice, note, date ->
+            vm.addExpense(selected.id, category, amount, km, qty, unitPrice, note, parseDate(date))
+            showExpense = false
+        }
     }
 
     if (showMaintenance && selected != null) {
@@ -173,11 +190,7 @@ private fun PinGate(context: Context, onUnlocked: () -> Unit) {
     val creating = savedHash == null
 
     Surface(Modifier.fillMaxSize()) {
-        Column(
-            Modifier.fillMaxSize().padding(28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
+        Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.primaryContainer) {
                 Icon(Icons.Default.Lock, null, modifier = Modifier.padding(24.dp).size(54.dp), tint = MaterialTheme.colorScheme.primary)
             }
@@ -192,18 +205,15 @@ private fun PinGate(context: Context, onUnlocked: () -> Unit) {
             }
             if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
             Spacer(Modifier.height(16.dp))
-            Button(
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                onClick = {
-                    when {
-                        pin.length !in 4..8 -> error = "Il PIN deve avere da 4 a 8 cifre."
-                        creating && pin != confirm -> error = "I PIN non coincidono."
-                        creating -> { prefs.edit().putString("pin_hash", hashPin(pin)).apply(); onUnlocked() }
-                        hashPin(pin) == savedHash -> onUnlocked()
-                        else -> error = "PIN non corretto."
-                    }
+            Button(modifier = Modifier.fillMaxWidth().height(54.dp), onClick = {
+                when {
+                    pin.length !in 4..8 -> error = "Il PIN deve avere da 4 a 8 cifre."
+                    creating && pin != confirm -> error = "I PIN non coincidono."
+                    creating -> { prefs.edit().putString("pin_hash", hashPin(pin)).apply(); onUnlocked() }
+                    hashPin(pin) == savedHash -> onUnlocked()
+                    else -> error = "PIN non corretto."
                 }
-            ) { Text(if (creating) "Proteggi AUTOMICOSTA" else "Entra") }
+            }) { Text(if (creating) "Proteggi AUTOMICOSTA" else "Entra") }
             Spacer(Modifier.height(28.dp))
             Text(COPYRIGHT, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -233,12 +243,7 @@ private fun Dashboard(vehicle: VehicleEntity, expenses: List<ExpenseEntity>, mai
                 }
             }
         }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SmallMetric("Costo/km", if (driven > 0) euro(costPerKm) else "—", Modifier.weight(1f))
-                SmallMetric("Carburante", euro(fuel), Modifier.weight(1f))
-            }
-        }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { SmallMetric("Costo/km", if (driven > 0) euro(costPerKm) else "—", Modifier.weight(1f)); SmallMetric("Carburante", euro(fuel), Modifier.weight(1f)) } }
         item { MetricCard("🔧 Manutenzione", euro(maintenanceTotal), "${maintenance.size} interventi registrati", onMaintenance) }
         item { MetricCard("⏰ Scadenze", reminderCount.toString(), if (reminderCount == 0) "Tutto tranquillo" else "Controlla cosa si avvicina", onReminders) }
         item { MetricCard("📍 Chilometraggio", "${vehicle.currentKm} km", if (driven > 0) "$driven km analizzati" else "Aggiorna i km nelle registrazioni") }
@@ -246,35 +251,29 @@ private fun Dashboard(vehicle: VehicleEntity, expenses: List<ExpenseEntity>, mai
 }
 
 @Composable
-private fun VehicleList(vehicles: List<VehicleEntity>, selectedId: Long?, onSelect: (VehicleEntity) -> Unit, onEdit: (VehicleEntity) -> Unit, onAdd: () -> Unit) {
+private fun VehicleList(vehicles: List<VehicleEntity>, selectedId: Long?, onSelect: (VehicleEntity) -> Unit, onEdit: (VehicleEntity) -> Unit, onDelete: (VehicleEntity) -> Unit, onAdd: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Il tuo garage", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-                    Text("${vehicles.size}/5 veicoli registrati", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                Column(Modifier.weight(1f)) { Text("Il tuo garage", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black); Text("${vehicles.size}/5 veicoli registrati", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 FilledTonalButton(onClick = onAdd, enabled = vehicles.size < 5) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Veicolo") }
             }
         }
         items(vehicles, key = { it.id }) { v ->
-            ElevatedCard(
-                Modifier.fillMaxWidth().clickable { onSelect(v) },
-                colors = if (v.id == selectedId) CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else CardDefaults.elevatedCardColors()
-            ) {
+            ElevatedCard(Modifier.fillMaxWidth().clickable { onSelect(v) }, colors = if (v.id == selectedId) CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else CardDefaults.elevatedCardColors()) {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.DirectionsCar, null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(v.nickname, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            Text(listOf(v.brand, v.model, v.registrationYear?.toString()).filter { !it.isNullOrBlank() }.joinToString(" · "))
-                        }
-                        TextButton(onClick = { onEdit(v) }) { Text("Modifica") }
+                        Column(Modifier.weight(1f)) { Text(v.nickname, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text(listOf(v.brand, v.model, v.registrationYear?.toString()).filter { !it.isNullOrBlank() }.joinToString(" · ")) }
                     }
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
                     Text("Targa: ${v.plate.ifBlank { "—" }}   •   VIN: ${v.vin.ifBlank { "—" }}", style = MaterialTheme.typography.bodySmall)
                     Text("${v.currentKm} km   •   ${v.fuelType}   •   Pneumatici: ${v.tireCount}", style = MaterialTheme.typography.bodySmall)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { onEdit(v) }) { Text("Modifica") }
+                        TextButton(onClick = { onDelete(v) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Icon(Icons.Default.Delete, null); Spacer(Modifier.width(4.dp)); Text("Elimina") }
+                    }
                 }
             }
         }
@@ -326,11 +325,7 @@ private fun VehicleEditorDialog(existing: VehicleEntity?, vinState: VinLookupSta
                     TextButton(onClick = onDismiss) { Text("Chiudi") }
                 }
                 LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    item {
-                        Text("Identificazione", fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(6.dp))
-                        OutlinedTextField(nickname, { nickname = it }, label = { Text("Nome del veicolo *") }, modifier = Modifier.fillMaxWidth())
-                    }
+                    item { Text("Identificazione", fontWeight = FontWeight.Bold); Spacer(Modifier.height(6.dp)); OutlinedTextField(nickname, { nickname = it }, label = { Text("Nome del veicolo *") }, modifier = Modifier.fillMaxWidth()) }
                     item { OutlinedTextField(plate, { plate = it.uppercase() }, label = { Text("Targa") }, modifier = Modifier.fillMaxWidth()) }
                     item {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -358,21 +353,9 @@ private fun VehicleEditorDialog(existing: VehicleEntity?, vinState: VinLookupSta
                     item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(purchaseDate, { purchaseDate = it }, label = { Text("Data acquisto") }, modifier = Modifier.weight(1f)); OutlinedTextField(purchasePrice, { purchasePrice = normalizeNumber(it) }, label = { Text("Prezzo €") }, modifier = Modifier.weight(1f)) } }
                     item { OutlinedTextField(notes, { notes = it }, label = { Text("Note veicolo") }, minLines = 3, modifier = Modifier.fillMaxWidth()) }
                 }
-                Button(
-                    onClick = {
-                        onSave(VehicleEntity(
-                            id = existing?.id ?: 0,
-                            nickname = nickname.ifBlank { listOf(brand, model).filter { it.isNotBlank() }.joinToString(" ").ifBlank { "Veicolo" } },
-                            brand = brand, model = model, plate = plate, vin = vin, registrationYear = year.toIntOrNull(), firstRegistrationDate = registrationDate,
-                            fuelType = fuel, currentKm = km.toIntOrNull() ?: 0, purchaseDate = purchaseDate, purchasePrice = purchasePrice.toDoubleOrNull(),
-                            tireCount = tireCount.toIntOrNull() ?: 4, frontTireSize = frontTires, rearTireSize = rearTires,
-                            engineDisplacementCc = displacement.toIntOrNull(), powerKw = powerKw.toDoubleOrNull(), bodyType = bodyType, color = color,
-                            countryOfOrigin = origin, notes = notes
-                        ))
-                    },
-                    enabled = nickname.isNotBlank() || brand.isNotBlank() || model.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().padding(20.dp).height(52.dp)
-                ) { Text("Salva veicolo") }
+                Button(onClick = {
+                    onSave(VehicleEntity(id = existing?.id ?: 0, nickname = nickname.ifBlank { listOf(brand, model).filter { it.isNotBlank() }.joinToString(" ").ifBlank { "Veicolo" } }, brand = brand, model = model, plate = plate, vin = vin, registrationYear = year.toIntOrNull(), firstRegistrationDate = registrationDate, fuelType = fuel, currentKm = km.toIntOrNull() ?: 0, purchaseDate = purchaseDate, purchasePrice = purchasePrice.toDoubleOrNull(), tireCount = tireCount.toIntOrNull() ?: 4, frontTireSize = frontTires, rearTireSize = rearTires, engineDisplacementCc = displacement.toIntOrNull(), powerKw = powerKw.toDoubleOrNull(), bodyType = bodyType, color = color, countryOfOrigin = origin, notes = notes))
+                }, enabled = nickname.isNotBlank() || brand.isNotBlank() || model.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(20.dp).height(52.dp)) { Text("Salva veicolo") }
             }
         }
     }
@@ -380,7 +363,7 @@ private fun VehicleEditorDialog(existing: VehicleEntity?, vinState: VinLookupSta
 
 @Composable
 private fun MaintenanceList(items: List<MaintenanceEntity>) {
-    if (items.isEmpty()) { EmptyState("Nessuna manutenzione", "Tocca + per registrare pastiglie freni, batteria, alternatore, tagliando e molto altro."); return }
+    if (items.isEmpty()) { EmptyState("Nessuna manutenzione", "Tocca + per registrare ricambi, revisioni, lampadine e qualsiasi intervento."); return }
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Storico manutenzione", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black) }
         items(items, key = { it.id }) { m ->
@@ -400,7 +383,7 @@ private fun MaintenanceList(items: List<MaintenanceEntity>) {
 
 @Composable
 private fun AddMaintenanceDialog(vehicleId: Long, onDismiss: () -> Unit, onSave: (MaintenanceEntity) -> Unit) {
-    var component by remember { mutableStateOf("Tagliando") }
+    var component by remember { mutableStateOf("Tagliando completo") }
     var workType by remember { mutableStateOf("Sostituzione") }
     var date by remember { mutableStateOf(today()) }
     var cost by remember { mutableStateOf("") }
@@ -424,12 +407,12 @@ private fun AddMaintenanceDialog(vehicleId: Long, onDismiss: () -> Unit, onSave:
                             ExposedDropdownMenu(expanded, { expanded = false }) { maintenanceComponents.forEach { c -> DropdownMenuItem(text = { Text(c) }, onClick = { component = c; expanded = false }) } }
                         }
                     }
-                    item { OutlinedTextField(workType, { workType = it }, label = { Text("Tipo lavoro (sostituzione, riparazione…)") }, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(workType, { workType = it }, label = { Text("Tipo lavoro / esito revisione") }, modifier = Modifier.fillMaxWidth()) }
                     item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(date, { date = it }, label = { Text("Data gg/mm/aaaa") }, modifier = Modifier.weight(1f)); OutlinedTextField(km, { km = it.filter(Char::isDigit) }, label = { Text("Km") }, modifier = Modifier.weight(1f)) } }
                     item { OutlinedTextField(cost, { cost = normalizeNumber(it) }, label = { Text("Costo €") }, modifier = Modifier.fillMaxWidth()) }
-                    item { OutlinedTextField(workshop, { workshop = it }, label = { Text("Officina / eseguito da") }, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(workshop, { workshop = it }, label = { Text("Officina / centro revisione") }, modifier = Modifier.fillMaxWidth()) }
                     item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(partBrand, { partBrand = it }, label = { Text("Marca ricambio") }, modifier = Modifier.weight(1f)); OutlinedTextField(partCode, { partCode = it }, label = { Text("Codice ricambio") }, modifier = Modifier.weight(1f)) } }
-                    item { Text("Prossimo controllo/sostituzione", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp)) }
+                    item { Text("Prossimo controllo/sostituzione/revisione", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp)) }
                     item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(nextDate, { nextDate = it }, label = { Text("Data (opz.)") }, modifier = Modifier.weight(1f)); OutlinedTextField(nextKm, { nextKm = it.filter(Char::isDigit) }, label = { Text("Km (opz.)") }, modifier = Modifier.weight(1f)) } }
                     item { OutlinedTextField(note, { note = it }, label = { Text("Note") }, minLines = 3, modifier = Modifier.fillMaxWidth()) }
                 }
@@ -469,22 +452,14 @@ private fun ReminderList(items: List<Pair<String, Pair<Int?, Long?>>>) {
 
 @Composable
 private fun MetricCard(title: String, value: String, subtitle: String, onClick: (() -> Unit)? = null) {
-    ElevatedCard(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)) {
-        Column(Modifier.padding(18.dp)) { Text(title, style = MaterialTheme.typography.labelLarge); Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black); Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-    }
+    ElevatedCard(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)) { Column(Modifier.padding(18.dp)) { Text(title, style = MaterialTheme.typography.labelLarge); Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black); Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
 }
 
 @Composable
-private fun SmallMetric(title: String, value: String, modifier: Modifier = Modifier) {
-    ElevatedCard(modifier) { Column(Modifier.padding(16.dp)) { Text(title, style = MaterialTheme.typography.labelMedium); Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black) } }
-}
+private fun SmallMetric(title: String, value: String, modifier: Modifier = Modifier) { ElevatedCard(modifier) { Column(Modifier.padding(16.dp)) { Text(title, style = MaterialTheme.typography.labelMedium); Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black) } } }
 
 @Composable
-private fun EmptyState(title: String, subtitle: String) {
-    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) { Text("🚘", style = MaterialTheme.typography.displayMedium); Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black); Spacer(Modifier.height(6.dp)); Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-    }
-}
+private fun EmptyState(title: String, subtitle: String) { Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text("🚘", style = MaterialTheme.typography.displayMedium); Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black); Spacer(Modifier.height(6.dp)); Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
 
 @Composable
 private fun AddExpenseDialog(onDismiss: () -> Unit, onSave: (String, Double, Int?, Double?, Double?, String, String) -> Unit) {
@@ -496,20 +471,13 @@ private fun AddExpenseDialog(onDismiss: () -> Unit, onSave: (String, Double, Int
     var note by remember { mutableStateOf("") }
     var date by remember { mutableStateOf(today()) }
     var expanded by remember { mutableStateOf(false) }
-
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Aggiungi spesa") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            ExposedDropdownMenuBox(expanded, { expanded = !expanded }) {
-                OutlinedTextField(category, {}, readOnly = true, label = { Text("Categoria") }, modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth())
-                ExposedDropdownMenu(expanded, { expanded = false }) { defaultCategories.forEach { c -> DropdownMenuItem(text = { Text(c) }, onClick = { category = c; expanded = false }) } }
-            }
+            ExposedDropdownMenuBox(expanded, { expanded = !expanded }) { OutlinedTextField(category, {}, readOnly = true, label = { Text("Categoria") }, modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()); ExposedDropdownMenu(expanded, { expanded = false }) { defaultCategories.forEach { c -> DropdownMenuItem(text = { Text(c) }, onClick = { category = c; expanded = false }) } } }
             OutlinedTextField(date, { date = it }, label = { Text("Data gg/mm/aaaa") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(amount, { amount = normalizeNumber(it) }, label = { Text("Importo €") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(km, { km = it.filter(Char::isDigit) }, label = { Text("Contachilometri") }, modifier = Modifier.fillMaxWidth())
-            if (category == "Carburante" || category == "Ricarica") {
-                OutlinedTextField(quantity, { quantity = normalizeNumber(it) }, label = { Text(if (category == "Ricarica") "kWh" else "Litri") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(unitPrice, { unitPrice = normalizeNumber(it) }, label = { Text(if (category == "Ricarica") "€/kWh" else "€/litro") }, modifier = Modifier.fillMaxWidth())
-            }
+            if (category == "Carburante" || category == "Ricarica") { OutlinedTextField(quantity, { quantity = normalizeNumber(it) }, label = { Text(if (category == "Ricarica") "kWh" else "Litri") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(unitPrice, { unitPrice = normalizeNumber(it) }, label = { Text(if (category == "Ricarica") "€/kWh" else "€/litro") }, modifier = Modifier.fillMaxWidth()) }
             OutlinedTextField(note, { note = it }, label = { Text("Nota") }, modifier = Modifier.fillMaxWidth())
         }
     }, confirmButton = { TextButton(enabled = amount.toDoubleOrNull() != null, onClick = { onSave(category, amount.toDoubleOrNull() ?: 0.0, km.toIntOrNull(), quantity.toDoubleOrNull(), unitPrice.toDoubleOrNull(), note, date) }) { Text("Salva") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } })
