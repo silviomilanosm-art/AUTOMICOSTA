@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -38,4 +39,24 @@ interface AutoMiCostaDao {
 
     @Insert
     suspend fun insertMaintenance(item: MaintenanceEntity)
+
+    @Query("DELETE FROM expenses WHERE vehicleId = :vehicleId")
+    suspend fun deleteVehicleExpenses(vehicleId: Long)
+
+    @Query("DELETE FROM reminders WHERE vehicleId = :vehicleId")
+    suspend fun deleteVehicleReminders(vehicleId: Long)
+
+    @Query("DELETE FROM maintenance WHERE vehicleId = :vehicleId")
+    suspend fun deleteVehicleMaintenance(vehicleId: Long)
+
+    @Query("DELETE FROM vehicles WHERE id = :vehicleId")
+    suspend fun deleteVehicleRow(vehicleId: Long)
+
+    @Transaction
+    suspend fun deleteVehicleCompletely(vehicleId: Long) {
+        deleteVehicleExpenses(vehicleId)
+        deleteVehicleReminders(vehicleId)
+        deleteVehicleMaintenance(vehicleId)
+        deleteVehicleRow(vehicleId)
+    }
 }
