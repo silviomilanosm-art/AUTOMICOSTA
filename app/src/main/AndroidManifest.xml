@@ -5,6 +5,9 @@
     <application
         android:name=".AutoMiCostaApplication"
         android:allowBackup="true"
+        android:fullBackupContent="true"
+        android:icon="@drawable/ic_car_red"
+        android:roundIcon="@drawable/ic_car_red"
         android:label="AUTOMICOSTA"
         android:theme="@style/Theme.AutoMiCosta">
         <activity
