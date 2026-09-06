@@ -54,6 +54,10 @@ private fun parseLibrettoText(raw: String): LibrettoData {
     }
 
     fun firstMatching(regex: Regex): String = regex.find(normalized)?.value.orEmpty()
+    fun cleanNumber(value: String): String = Regex("\\d+(?:[.,]\\d+)?").find(value)?.value.orEmpty()
+    fun addTechnical(target: MutableList<String>, code: String, label: String, value: String) {
+        if (value.isNotBlank()) target += "$code · $label: $value"
+    }
 
     val vin = valueAfter("E")
         .uppercase()
@@ -68,24 +72,88 @@ private fun parseLibrettoText(raw: String): LibrettoData {
     val registration = valueAfter("B")
         .replace('.', '/')
         .replace('-', '/')
-        .takeIf { it.matches(Regex("\\d{1,2}/\\d{1,2}/\\d{4}")) }
-        .orEmpty()
+        .let { candidate -> Regex("\\d{1,2}/\\d{1,2}/\\d{4}").find(candidate)?.value.orEmpty() }
 
     val brand = valueAfter("D.1")
-    val model = valueAfter("D.3").ifBlank { valueAfter("D.2") }
-    val displacement = valueAfter("P.1").filter { it.isDigit() }.toIntOrNull()
-    val power = valueAfter("P.2").replace(',', '.').let { Regex("\\d+(?:\\.\\d+)?").find(it)?.value?.toDoubleOrNull() }
-    val fuelRaw = valueAfter("P.3")
+    val typeVariantVersion = valueAfter("D.2")
+    val commercialName = valueAfter("D.3")
+    val model = commercialName.ifBlank { typeVariantVersion }
+
+    val p1 = valueAfter("P.1")
+    val p2 = valueAfter("P.2")
+    val p3 = valueAfter("P.3")
+    val displacement = cleanNumber(p1).substringBefore(',').substringBefore('.').toIntOrNull()
+    val power = cleanNumber(p2).replace(',', '.').toDoubleOrNull()
+
     val fuel = when {
-        fuelRaw.contains("benz", ignoreCase = true) -> "Benzina"
-        fuelRaw.contains("diesel", ignoreCase = true) || fuelRaw.contains("gasolio", ignoreCase = true) -> "Diesel"
-        fuelRaw.contains("elet", ignoreCase = true) -> "Elettrica"
-        fuelRaw.contains("ibrid", ignoreCase = true) -> "Ibrida"
-        fuelRaw.contains("gpl", ignoreCase = true) -> "GPL"
-        fuelRaw.contains("metano", ignoreCase = true) || fuelRaw.contains("cng", ignoreCase = true) -> "Metano"
-        else -> fuelRaw
+        p3.contains("benz", ignoreCase = true) -> "Benzina"
+        p3.contains("diesel", ignoreCase = true) || p3.contains("gasolio", ignoreCase = true) -> "Diesel"
+        p3.contains("elet", ignoreCase = true) -> "Elettrica"
+        p3.contains("ibrid", ignoreCase = true) -> "Ibrida"
+        p3.contains("gpl", ignoreCase = true) -> "GPL"
+        p3.contains("metano", ignoreCase = true) || p3.contains("cng", ignoreCase = true) -> "Metano"
+        else -> p3
     }
-    val body = valueAfter("J.2").ifBlank { valueAfter("J") }
+
+    val j = valueAfter("J")
+    val j1 = valueAfter("J.1")
+    val j2 = valueAfter("J.2")
+    val body = j2.ifBlank { j1.ifBlank { j } }
+
+    val f1 = valueAfter("F.1")
+    val f2 = valueAfter("F.2")
+    val f3 = valueAfter("F.3")
+    val k = valueAfter("K")
+    val p5 = valueAfter("P.5")
+    val q = valueAfter("Q")
+    val s1 = valueAfter("S.1")
+    val s2 = valueAfter("S.2")
+    val t = valueAfter("T")
+    val v7 = valueAfter("V.7")
+    val v9 = valueAfter("V.9")
+
+    val tireMatches = Regex("(?i)\\b\\d{3}/\\d{2}\\s*[RZ]R?\\s*\\d{2}(?:\\s*\\d{2,3}[A-Z])?\\b")
+        .findAll(normalized)
+        .map { it.value.replace(Regex("\\s+"), " ").uppercase() }
+        .distinct()
+        .take(8)
+        .toList()
+
+    val technical = mutableListOf<String>()
+    addTechnical(technical, "A", "Targa", plate)
+    addTechnical(technical, "B", "Prima immatricolazione", registration)
+    addTechnical(technical, "D.1", "Marca", brand)
+    addTechnical(technical, "D.2", "Tipo / variante / versione", typeVariantVersion)
+    addTechnical(technical, "D.3", "Denominazione commerciale", commercialName)
+    addTechnical(technical, "E", "Telaio VIN", vin)
+    addTechnical(technical, "F.1", "Massa massima tecnicamente ammissibile", f1)
+    addTechnical(technical, "F.2", "Massa massima ammissibile in servizio", f2)
+    addTechnical(technical, "F.3", "Massa massima complesso", f3)
+    addTechnical(technical, "J", "Categoria del veicolo", j)
+    addTechnical(technical, "J.1", "Destinazione / uso", j1)
+    addTechnical(technical, "J.2", "Carrozzeria", j2)
+    addTechnical(technical, "K", "Numero di omologazione", k)
+    addTechnical(technical, "P.1", "Cilindrata cm³", p1)
+    addTechnical(technical, "P.2", "Potenza netta massima kW", p2)
+    addTechnical(technical, "P.3", "Alimentazione", p3)
+    addTechnical(technical, "P.5", "Identificazione motore", p5)
+    addTechnical(technical, "Q", "Rapporto potenza/massa", q)
+    addTechnical(technical, "S.1", "Posti a sedere", s1)
+    addTechnical(technical, "S.2", "Posti in piedi", s2)
+    addTechnical(technical, "T", "Velocità massima km/h", t)
+    addTechnical(technical, "V.7", "CO₂ g/km", v7)
+    addTechnical(technical, "V.9", "Classe ambientale", v9)
+    if (tireMatches.isNotEmpty()) technical += "Pneumatici rilevati: ${tireMatches.joinToString(" · ")}"
+
+    val annotatedRaw = buildString {
+        if (technical.isNotEmpty()) {
+            appendLine("SCHEDA TECNICA RICONOSCIUTA")
+            technical.forEach { appendLine(it) }
+            appendLine()
+            appendLine("TESTO COMPLETO OCR")
+        }
+        append(normalized.trim())
+    }
 
     return LibrettoData(
         plate = plate,
@@ -97,6 +165,6 @@ private fun parseLibrettoText(raw: String): LibrettoData {
         powerKw = power,
         fuelType = fuel,
         bodyType = body,
-        rawText = normalized.trim()
+        rawText = annotatedRaw
     )
 }
