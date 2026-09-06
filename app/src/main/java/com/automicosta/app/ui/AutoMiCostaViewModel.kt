@@ -62,6 +62,13 @@ class AutoMiCostaViewModel(private val dao: AutoMiCostaDao) : ViewModel() {
         }
     }
 
+    fun deleteVehicle(vehicleId: Long) {
+        viewModelScope.launch {
+            dao.deleteVehicleCompletely(vehicleId)
+            if (selectedVehicleId.value == vehicleId) selectedVehicleId.value = null
+        }
+    }
+
     fun addExpense(vehicleId: Long, category: String, amount: Double, km: Int?, quantity: Double?, unitPrice: Double?, note: String, dateEpochDay: Long) {
         viewModelScope.launch {
             dao.insertExpense(
