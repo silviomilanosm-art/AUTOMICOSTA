@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -32,7 +33,7 @@ import java.io.File
 fun LibrettoScanButton(onData: (LibrettoData) -> Unit) {
     val context = LocalContext.current
     var busy by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf("Scatta una foto, scegli un'immagine oppure carica il PDF del libretto.") }
+    var message by remember { mutableStateOf("Scatta una foto, scegli un'immagine oppure carica PDF/Word del libretto.") }
     var pendingUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
     fun handleResult(result: Result<LibrettoData>, source: String) {
@@ -43,13 +44,13 @@ fun LibrettoScanButton(onData: (LibrettoData) -> Unit) {
             message = if (count > 0) {
                 "Dati trovati nel $source e precompilati. Controllali prima di salvare."
             } else {
-                "Il $source è stato letto, ma non ho riconosciuto automaticamente i campi principali. Il testo OCR è stato aggiunto alle note."
+                "Il $source è stato letto, ma non ho riconosciuto automaticamente i campi principali. Il testo è stato aggiunto alle note."
             }
         }.onFailure {
-            message = if (source == "PDF") {
-                "Non sono riuscito a leggere il PDF. Verifica che non sia protetto da password e che le pagine siano leggibili."
-            } else {
-                "Non sono riuscito a leggere la foto. Prova con più luce e senza riflessi."
+            message = when (source) {
+                "PDF" -> "Non sono riuscito a leggere il PDF. Verifica che non sia protetto da password e che le pagine siano leggibili."
+                "Word" -> "Non sono riuscito a leggere il file Word. Usa un documento .docx non protetto."
+                else -> "Non sono riuscito a leggere la foto. Prova con più luce e senza riflessi."
             }
         }
     }
@@ -66,6 +67,12 @@ fun LibrettoScanButton(onData: (LibrettoData) -> Unit) {
         scanLibrettoPdf(context, uri) { handleResult(it, "PDF") }
     }
 
+    fun processWord(uri: android.net.Uri) {
+        busy = true
+        message = "Sto leggendo il file Word…"
+        scanLibrettoDocx(context, uri) { handleResult(it, "Word") }
+    }
+
     val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val uri = pendingUri
         if (ok && uri != null) processImage(uri) else message = "Foto annullata."
@@ -75,6 +82,9 @@ fun LibrettoScanButton(onData: (LibrettoData) -> Unit) {
     }
     val pickPdf = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) processPdf(uri)
+    }
+    val pickWord = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) processWord(uri)
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -109,6 +119,15 @@ fun LibrettoScanButton(onData: (LibrettoData) -> Unit) {
             Icon(Icons.Default.PictureAsPdf, contentDescription = null)
             Spacer(Modifier.width(6.dp))
             Text("Carica PDF del libretto")
+        }
+        FilledTonalButton(
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { pickWord.launch("application/vnd.openxmlformats-officedocument.wordprocessingml.document") }
+        ) {
+            Icon(Icons.Default.Description, contentDescription = null)
+            Spacer(Modifier.width(6.dp))
+            Text("Carica file Word (.docx)")
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
