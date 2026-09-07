@@ -2,6 +2,8 @@ package com.automicosta.app.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,15 +16,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +63,29 @@ fun PartsScreen(vehicle: VehicleEntity?) {
     val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
+    var manualInfo by remember { mutableStateOf(getPartsManualInfo(context)) }
+    var manualQuestion by remember { mutableStateOf("") }
+    var manualResults by remember { mutableStateOf<List<ManualSearchResult>>(emptyList()) }
+    var manualStatus by remember { mutableStateOf("") }
+    var importingManual by remember { mutableStateOf(false) }
+    var confirmDeleteManual by remember { mutableStateOf(false) }
+
+    val manualPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            importingManual = true
+            manualStatus = "Acquisizione del manuale in corso…"
+            importPartsManual(context, uri) { result ->
+                importingManual = false
+                result.onSuccess {
+                    manualInfo = it
+                    manualResults = emptyList()
+                    manualStatus = "Manuale acquisito. Ora puoi fare domande sui pezzi."
+                }.onFailure {
+                    manualStatus = "Errore: ${it.message ?: "impossibile leggere il manuale"}"
+                }
+            }
+        }
+    }
 
     fun vehicleIdentity(): String = buildString {
         if (!vehicle?.vin.isNullOrBlank()) append("VIN ${vehicle?.vin} ")
@@ -87,10 +118,69 @@ fun PartsScreen(vehicle: VehicleEntity?) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+
         item {
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Cerca un pezzo", fontWeight = FontWeight.Bold)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Description, null)
+                        Text("Manuale pezzi dell'automobile", fontWeight = FontWeight.Bold)
+                    }
+                    if (manualInfo == null) {
+                        Text("Carica il manuale o catalogo ricambi dell'auto. AUTOMICOSTA ne acquisisce il testo e poi cerca dentro il documento quando fai una domanda sui pezzi.", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Text("Caricato: ${manualInfo?.name}", fontWeight = FontWeight.SemiBold)
+                        Text("${manualInfo?.type} · ${manualInfo?.chars ?: 0} caratteri indicizzati localmente", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Button(
+                        onClick = { manualPicker.launch(arrayOf("application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain", "text/csv")) },
+                        enabled = !importingManual,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (manualInfo == null) "Carica manuale ricambi" else "Sostituisci manuale") }
+                    if (importingManual) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if (manualInfo != null) {
+                        OutlinedTextField(
+                            value = manualQuestion,
+                            onValueChange = { manualQuestion = it },
+                            label = { Text("Chiedi un pezzo al manuale") },
+                            placeholder = { Text("Es. Qual è il codice della lampadina anabbagliante?") },
+                            leadingIcon = { Icon(Icons.Default.Search, null) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = {
+                                manualResults = searchPartsManual(context, manualQuestion)
+                                manualStatus = if (manualResults.isEmpty()) "Non ho trovato una corrispondenza chiara nel manuale." else "Ho trovato ${manualResults.size} passaggi pertinenti nel manuale."
+                            },
+                            enabled = manualQuestion.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Cerca nel manuale") }
+                        OutlinedButton(onClick = { confirmDeleteManual = true }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Delete, null)
+                            Text("  Elimina manuale")
+                        }
+                    }
+                    if (manualStatus.isNotBlank()) Text(manualStatus, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        if (manualResults.isNotEmpty()) {
+            item { Text("Risposte estratte dal manuale", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+            items(manualResults) { result ->
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text(result.excerpt)
+                        Text("Corrispondenza: ${result.score}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+
+        item {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Cerca un pezzo online", fontWeight = FontWeight.Bold)
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it },
@@ -99,25 +189,23 @@ fun PartsScreen(vehicle: VehicleEntity?) {
                         leadingIcon = { Icon(Icons.Default.Search, null) }
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Button(onClick = { if (query.isNotBlank()) openSearch(query) }, enabled = query.isNotBlank(), modifier = Modifier.weight(1f)) {
-                            Text("Prezzi online")
-                        }
-                        Button(onClick = { if (query.isNotBlank()) openSearch(query, true) }, enabled = query.isNotBlank(), modifier = Modifier.weight(1f)) {
-                            Text("Codice OE/OEM")
-                        }
+                        Button(onClick = { if (query.isNotBlank()) openSearch(query) }, enabled = query.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Prezzi online") }
+                        Button(onClick = { if (query.isNotBlank()) openSearch(query, true) }, enabled = query.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Codice OE/OEM") }
                     }
                     Text("La ricerca usa VIN quando disponibile, altrimenti targa e dati del veicolo. Verifica sempre la compatibilità prima dell'acquisto.", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
+
         item {
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Catalogo professionale", fontWeight = FontWeight.Bold)
-                    Text("L'app è predisposta per un futuro collegamento TecDoc/TecAlliance, necessario per una corrispondenza professionale VIN/targa → ricambio → codice OE. I prezzi retail dipendono invece dai singoli venditori.", style = MaterialTheme.typography.bodySmall)
+                    Text("L'app è predisposta per un futuro collegamento TecDoc/TecAlliance per una corrispondenza professionale VIN/targa → ricambio → codice OE. Il manuale caricato resta invece salvato localmente sul telefono.", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
+
         items(partsCategories) { category ->
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -136,5 +224,24 @@ fun PartsScreen(vehicle: VehicleEntity?) {
                 }
             }
         }
+    }
+
+    if (confirmDeleteManual) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteManual = false },
+            title = { Text("Eliminare il manuale?") },
+            text = { Text("Verrà eliminata solo la copia acquisita da AUTOMICOSTA. Il file originale sul telefono non verrà toccato.") },
+            confirmButton = {
+                Button(onClick = {
+                    deletePartsManual(context)
+                    manualInfo = null
+                    manualResults = emptyList()
+                    manualQuestion = ""
+                    manualStatus = "Manuale eliminato dall'app."
+                    confirmDeleteManual = false
+                }) { Text("Elimina") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteManual = false }) { Text("Annulla") } }
+        )
     }
 }
