@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -31,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.security.MessageDigest
 
-private enum class RootSection { APP, LIBRETTO, RICAMBI }
+private enum class RootSection { APP, AI, LIBRETTO, RICAMBI }
 
 @Composable
 fun AutoMiCostaRoot(vm: AutoMiCostaViewModel) {
@@ -45,6 +46,7 @@ fun AutoMiCostaRoot(vm: AutoMiCostaViewModel) {
         Box(Modifier.weight(1f)) {
             when (section) {
                 RootSection.APP -> AutoMiCostaApp(vm)
+                RootSection.AI -> AiAssistantScreen(vm, vehicles)
                 RootSection.LIBRETTO -> CartaCircolazioneScreen()
                 RootSection.RICAMBI -> {
                     if (partsUnlocked || hasNoPin(context)) PartsScreen(selected)
@@ -59,6 +61,12 @@ fun AutoMiCostaRoot(vm: AutoMiCostaViewModel) {
                     onClick = { section = RootSection.APP },
                     icon = { Icon(Icons.Default.DirectionsCar, contentDescription = null) },
                     label = { Text("AUTO") }
+                )
+                NavigationBarItem(
+                    selected = section == RootSection.AI,
+                    onClick = { section = RootSection.AI },
+                    icon = { Icon(Icons.Default.Psychology, contentDescription = null) },
+                    label = { Text("AI", fontWeight = FontWeight.Bold) }
                 )
                 NavigationBarItem(
                     selected = section == RootSection.LIBRETTO,
