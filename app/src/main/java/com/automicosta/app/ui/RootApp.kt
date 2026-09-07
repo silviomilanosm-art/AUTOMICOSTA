@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -30,7 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.security.MessageDigest
 
-private enum class RootSection { APP, RICAMBI }
+private enum class RootSection { APP, LIBRETTO, RICAMBI }
 
 @Composable
 fun AutoMiCostaRoot(vm: AutoMiCostaViewModel) {
@@ -44,38 +45,65 @@ fun AutoMiCostaRoot(vm: AutoMiCostaViewModel) {
         Box(Modifier.weight(1f)) {
             when (section) {
                 RootSection.APP -> AutoMiCostaApp(vm)
+                RootSection.LIBRETTO -> CartaCircolazioneScreen()
                 RootSection.RICAMBI -> {
-                    if (partsUnlocked || hasNoPin(context)) {
-                        PartsScreen(selected)
-                    } else {
-                        PartsPinGate(context) { partsUnlocked = true }
-                    }
+                    if (partsUnlocked || hasNoPin(context)) PartsScreen(selected)
+                    else PartsPinGate(context) { partsUnlocked = true }
                 }
             }
         }
-
         Surface(tonalElevation = 6.dp) {
             NavigationBar(modifier = Modifier.fillMaxWidth()) {
                 NavigationBarItem(
                     selected = section == RootSection.APP,
                     onClick = { section = RootSection.APP },
                     icon = { Icon(Icons.Default.DirectionsCar, contentDescription = null) },
-                    label = { Text("AUTOMICOSTA") }
+                    label = { Text("AUTO") }
+                )
+                NavigationBarItem(
+                    selected = section == RootSection.LIBRETTO,
+                    onClick = { section = RootSection.LIBRETTO },
+                    icon = { Icon(Icons.Default.Description, contentDescription = null) },
+                    label = { Text("LIBRETTO", fontWeight = FontWeight.Bold) }
                 )
                 NavigationBarItem(
                     selected = section == RootSection.RICAMBI,
                     onClick = { section = RootSection.RICAMBI },
                     icon = { Icon(Icons.Default.Build, contentDescription = null) },
-                    label = { Text("RICAMBI", fontWeight = FontWeight.Black) }
+                    label = { Text("RICAMBI", fontWeight = FontWeight.Bold) }
                 )
             }
         }
     }
 }
 
+@Composable
+private fun CartaCircolazioneScreen() {
+    var lastData by remember { mutableStateOf<LibrettoData?>(null) }
+    Column(Modifier.fillMaxSize().padding(20.dp)) {
+        Text("Carta di circolazione", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(
+            "Inserisci la carta di circolazione come PDF oppure foto. AUTOMICOSTA legge il documento sul telefono ed estrae i dati riconosciuti.",
+            modifier = Modifier.padding(top = 8.dp, bottom = 16.dp)
+        )
+        LibrettoScanButton { lastData = it }
+        lastData?.let { data ->
+            Text("Dati riconosciuti", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp))
+            val summary = listOfNotNull(
+                data.plate.takeIf { it.isNotBlank() }?.let { "Targa: $it" },
+                data.vin.takeIf { it.isNotBlank() }?.let { "VIN: $it" },
+                data.brand.takeIf { it.isNotBlank() }?.let { "Marca: $it" },
+                data.model.takeIf { it.isNotBlank() }?.let { "Modello: $it" },
+                data.firstRegistrationDate.takeIf { it.isNotBlank() }?.let { "Prima immatricolazione: $it" },
+                data.fuelType.takeIf { it.isNotBlank() }?.let { "Alimentazione: $it" }
+            ).joinToString("\n")
+            Text(if (summary.isBlank()) "Documento acquisito: controlla il testo riconosciuto." else summary, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
 private fun hasNoPin(context: Context): Boolean =
-    context.getSharedPreferences("automicosta_security", Context.MODE_PRIVATE)
-        .getString("pin_hash", null) == null
+    context.getSharedPreferences("automicosta_security", Context.MODE_PRIVATE).getString("pin_hash", null) == null
 
 @Composable
 private fun PartsPinGate(context: Context, onUnlocked: () -> Unit) {
@@ -83,16 +111,10 @@ private fun PartsPinGate(context: Context, onUnlocked: () -> Unit) {
     val savedHash = remember { prefs.getString("pin_hash", null) }
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(28.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(28.dp)) {
         Text("RICAMBI", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
         Text("Catalogo ricambi del veicolo selezionato", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Inserisci lo stesso PIN di AUTOMICOSTA per accedere a telaio/VIN, categorie ricambi, codici OE/OEM e ricerca prezzi.",
-            modifier = Modifier.padding(top = 10.dp)
-        )
+        Text("Inserisci lo stesso PIN di AUTOMICOSTA per accedere a telaio/VIN, categorie ricambi, codici OE/OEM e ricerca prezzi.", modifier = Modifier.padding(top = 10.dp))
         OutlinedTextField(
             value = pin,
             onValueChange = { pin = it.filter(Char::isDigit).take(8); error = "" },
@@ -102,10 +124,7 @@ private fun PartsPinGate(context: Context, onUnlocked: () -> Unit) {
         )
         if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
         TextButton(
-            onClick = {
-                if (savedHash != null && hashPinForParts(pin) == savedHash) onUnlocked()
-                else error = "PIN non corretto."
-            },
+            onClick = { if (savedHash != null && hashPinForParts(pin) == savedHash) onUnlocked() else error = "PIN non corretto." },
             enabled = pin.length in 4..8,
             modifier = Modifier.padding(top = 8.dp)
         ) { Text("Apri RICAMBI", fontWeight = FontWeight.Bold) }
@@ -113,6 +132,4 @@ private fun PartsPinGate(context: Context, onUnlocked: () -> Unit) {
 }
 
 private fun hashPinForParts(pin: String): String =
-    MessageDigest.getInstance("SHA-256")
-        .digest(pin.toByteArray())
-        .joinToString("") { "%02x".format(it) }
+    MessageDigest.getInstance("SHA-256").digest(pin.toByteArray()).joinToString("") { "%02x".format(it) }
