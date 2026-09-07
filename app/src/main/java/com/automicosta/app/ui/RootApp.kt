@@ -1,19 +1,18 @@
 package com.automicosta.app.ui
 
 import android.content.Context
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,26 +41,6 @@ fun AutoMiCostaRoot(vm: AutoMiCostaViewModel) {
     val selected = vehicles.firstOrNull()
 
     Column(Modifier.fillMaxSize()) {
-        Surface(tonalElevation = 3.dp) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = section == RootSection.APP,
-                    onClick = { section = RootSection.APP },
-                    label = { Text("AUTOMICOSTA") },
-                    leadingIcon = { Icon(Icons.Default.DirectionsCar, null) }
-                )
-                FilterChip(
-                    selected = section == RootSection.RICAMBI,
-                    onClick = { section = RootSection.RICAMBI },
-                    label = { Text("RICAMBI") },
-                    leadingIcon = { Icon(Icons.Default.Build, null) }
-                )
-            }
-        }
-
         Box(Modifier.weight(1f)) {
             when (section) {
                 RootSection.APP -> AutoMiCostaApp(vm)
@@ -72,6 +51,23 @@ fun AutoMiCostaRoot(vm: AutoMiCostaViewModel) {
                         PartsPinGate(context) { partsUnlocked = true }
                     }
                 }
+            }
+        }
+
+        Surface(tonalElevation = 6.dp) {
+            NavigationBar(modifier = Modifier.fillMaxWidth()) {
+                NavigationBarItem(
+                    selected = section == RootSection.APP,
+                    onClick = { section = RootSection.APP },
+                    icon = { Icon(Icons.Default.DirectionsCar, contentDescription = null) },
+                    label = { Text("AUTOMICOSTA") }
+                )
+                NavigationBarItem(
+                    selected = section == RootSection.RICAMBI,
+                    onClick = { section = RootSection.RICAMBI },
+                    icon = { Icon(Icons.Default.Build, contentDescription = null) },
+                    label = { Text("RICAMBI", fontWeight = FontWeight.Black) }
+                )
             }
         }
     }
@@ -89,11 +85,14 @@ private fun PartsPinGate(context: Context, onUnlocked: () -> Unit) {
     var error by remember { mutableStateOf("") }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(28.dp),
-        verticalArrangement = Arrangement.Center
+        modifier = Modifier.fillMaxSize().padding(28.dp)
     ) {
-        Text("Ricambi protetti", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-        Text("Inserisci lo stesso PIN di AUTOMICOSTA per vedere i dati del veicolo.")
+        Text("RICAMBI", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
+        Text("Catalogo ricambi del veicolo selezionato", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Inserisci lo stesso PIN di AUTOMICOSTA per accedere a telaio/VIN, categorie ricambi, codici OE/OEM e ricerca prezzi.",
+            modifier = Modifier.padding(top = 10.dp)
+        )
         OutlinedTextField(
             value = pin,
             onValueChange = { pin = it.filter(Char::isDigit).take(8); error = "" },
@@ -109,7 +108,7 @@ private fun PartsPinGate(context: Context, onUnlocked: () -> Unit) {
             },
             enabled = pin.length in 4..8,
             modifier = Modifier.padding(top = 8.dp)
-        ) { Text("Apri Ricambi") }
+        ) { Text("Apri RICAMBI", fontWeight = FontWeight.Bold) }
     }
 }
 
