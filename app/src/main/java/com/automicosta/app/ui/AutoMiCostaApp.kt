@@ -44,13 +44,6 @@ private const val COPYRIGHT = "© 2026 Pasquale Mancuso · Tutti i diritti riser
 
 @Composable
 fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
-    val context = LocalContext.current
-    var unlocked by remember { mutableStateOf(false) }
-    if (!unlocked) {
-        PinGate(context) { unlocked = true }
-        return
-    }
-
     val vehicles by vm.vehicles.collectAsStateWithLifecycle()
     var selectedId by remember { mutableStateOf<Long?>(null) }
     val selected = vehicles.firstOrNull { it.id == selectedId } ?: vehicles.firstOrNull()
