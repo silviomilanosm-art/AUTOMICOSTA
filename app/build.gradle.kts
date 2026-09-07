@@ -13,8 +13,8 @@ android {
         applicationId = "com.automicosta.app"
         minSdk = 23
         targetSdk = 37
-        versionCode = 9
-        versionName = "0.8.0"
+        versionCode = 10
+        versionName = "0.8.1"
     }
 
     buildFeatures { compose = true }
