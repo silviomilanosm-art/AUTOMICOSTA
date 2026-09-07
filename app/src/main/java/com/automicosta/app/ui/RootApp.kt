@@ -1,0 +1,119 @@
+package com.automicosta.app.ui
+
+import android.content.Context
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.security.MessageDigest
+
+private enum class RootSection { APP, RICAMBI }
+
+@Composable
+fun AutoMiCostaRoot(vm: AutoMiCostaViewModel) {
+    val context = LocalContext.current
+    var section by remember { mutableStateOf(RootSection.APP) }
+    var partsUnlocked by remember { mutableStateOf(false) }
+    val vehicles by vm.vehicles.collectAsStateWithLifecycle()
+    val selected = vehicles.firstOrNull()
+
+    Column(Modifier.fillMaxSize()) {
+        Surface(tonalElevation = 3.dp) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = section == RootSection.APP,
+                    onClick = { section = RootSection.APP },
+                    label = { Text("AUTOMICOSTA") },
+                    leadingIcon = { Icon(Icons.Default.DirectionsCar, null) }
+                )
+                FilterChip(
+                    selected = section == RootSection.RICAMBI,
+                    onClick = { section = RootSection.RICAMBI },
+                    label = { Text("RICAMBI") },
+                    leadingIcon = { Icon(Icons.Default.Build, null) }
+                )
+            }
+        }
+
+        Box(Modifier.weight(1f)) {
+            when (section) {
+                RootSection.APP -> AutoMiCostaApp(vm)
+                RootSection.RICAMBI -> {
+                    if (partsUnlocked || hasNoPin(context)) {
+                        PartsScreen(selected)
+                    } else {
+                        PartsPinGate(context) { partsUnlocked = true }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun hasNoPin(context: Context): Boolean =
+    context.getSharedPreferences("automicosta_security", Context.MODE_PRIVATE)
+        .getString("pin_hash", null) == null
+
+@Composable
+private fun PartsPinGate(context: Context, onUnlocked: () -> Unit) {
+    val prefs = remember { context.getSharedPreferences("automicosta_security", Context.MODE_PRIVATE) }
+    val savedHash = remember { prefs.getString("pin_hash", null) }
+    var pin by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(28.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("Ricambi protetti", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+        Text("Inserisci lo stesso PIN di AUTOMICOSTA per vedere i dati del veicolo.")
+        OutlinedTextField(
+            value = pin,
+            onValueChange = { pin = it.filter(Char::isDigit).take(8); error = "" },
+            label = { Text("PIN") },
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+        )
+        if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+        TextButton(
+            onClick = {
+                if (savedHash != null && hashPinForParts(pin) == savedHash) onUnlocked()
+                else error = "PIN non corretto."
+            },
+            enabled = pin.length in 4..8,
+            modifier = Modifier.padding(top = 8.dp)
+        ) { Text("Apri Ricambi") }
+    }
+}
+
+private fun hashPinForParts(pin: String): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest(pin.toByteArray())
+        .joinToString("") { "%02x".format(it) }
