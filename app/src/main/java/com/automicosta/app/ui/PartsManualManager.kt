@@ -76,7 +76,7 @@ fun searchPartsManual(context: Context, question: String, maxResults: Int = 6): 
         .distinct()
     if (terms.isEmpty()) return emptyList()
 
-    val blocks = text.split(Regex("\n{2,}|(?<=\.)\s+(?=[A-ZÀ-Ý0-9])"))
+    val blocks = text.split(Regex("""\n{2,}|(?<=\.)\s+(?=[A-ZÀ-Ý0-9])"""))
     return blocks.mapNotNull { block ->
         val normalized = block.lowercase(Locale.ROOT)
         var score = 0
