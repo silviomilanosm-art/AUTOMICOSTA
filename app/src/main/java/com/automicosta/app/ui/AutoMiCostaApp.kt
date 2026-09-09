@@ -39,7 +39,7 @@ import java.util.Currency
 import java.util.Date
 import java.util.Locale
 
-private enum class Tab { HOME, VEICOLI, SPESE, MANUTENZIONE, SCADENZE }
+private enum class Tab { HOME, VEICOLI, SPESE, MANUTENZIONE, MANUALE, SCADENZE }
 private const val COPYRIGHT = "© 2026 Pasquale Mancuso · Tutti i diritti riservati"
 
 @Composable
@@ -86,6 +86,7 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
                     NavigationBarItem(tab == Tab.VEICOLI, { tab = Tab.VEICOLI }, { Icon(Icons.Default.DirectionsCar, null) }, label = { Text("Veicoli") })
                     NavigationBarItem(tab == Tab.SPESE, { tab = Tab.SPESE }, { Icon(Icons.Default.ReceiptLong, null) }, label = { Text("Spese") })
                     NavigationBarItem(tab == Tab.MANUTENZIONE, { tab = Tab.MANUTENZIONE }, { Icon(Icons.Default.Build, null) }, label = { Text("Manut.") })
+                    NavigationBarItem(tab == Tab.MANUALE, { tab = Tab.MANUALE }, { Icon(Icons.Default.Search, null) }, label = { Text("Manuale") })
                 }
                 Text(COPYRIGHT, Modifier.fillMaxWidth().padding(vertical = 5.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
@@ -96,6 +97,7 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
                     when (tab) {
                         Tab.VEICOLI -> if (vehicles.size < 5) { vm.resetVinLookup(); showNewVehicle = true }
                         Tab.MANUTENZIONE -> showMaintenance = true
+                        Tab.MANUALE -> Unit
                         Tab.SCADENZE -> showReminder = true
                         else -> if (selected != null) { expenseEditor = null; showExpense = true }
                     }
@@ -110,6 +112,7 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
                 tab == Tab.VEICOLI -> VehicleList(vehicles, selected?.id, { selectedId = it.id; vm.selectVehicle(it.id) }, { vm.resetVinLookup(); vehicleEditor = it }, { vehicleToDelete = it }) { if (vehicles.size < 5) { vm.resetVinLookup(); showNewVehicle = true } }
                 tab == Tab.SPESE -> ExpenseList(expenses) { expenseEditor = it }
                 tab == Tab.MANUTENZIONE -> MaintenanceList(maintenance)
+                tab == Tab.MANUALE -> WorkshopManualScreen()
                 tab == Tab.SCADENZE -> ReminderList(reminders.map { it.title to Pair(it.dueKm, it.dueEpochDay) })
             }
         }
