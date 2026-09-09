@@ -1,0 +1,21 @@
+name: Apply manual tab
+on:
+  push:
+    paths:
+      - 'tools/add_manual_tab.py'
+      - '.github/workflows/apply-manual-tab.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python tools/add_manual_tab.py
+      - name: Commit integration
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/src/main/java/com/automicosta/app/ui/AutoMiCostaApp.kt
+          git diff --cached --quiet || git commit -m "Integrate Italian workshop manual tab"
+          git push
