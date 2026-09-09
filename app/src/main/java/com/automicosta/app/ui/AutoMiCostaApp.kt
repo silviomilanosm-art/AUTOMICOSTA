@@ -61,6 +61,7 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
 
     var tab by remember { mutableStateOf(Tab.HOME) }
     var showExpense by remember { mutableStateOf(false) }
+    var expenseEditor by remember { mutableStateOf<ExpenseEntity?>(null) }
     var showMaintenance by remember { mutableStateOf(false) }
     var showReminder by remember { mutableStateOf(false) }
     var vehicleEditor by remember { mutableStateOf<VehicleEntity?>(null) }
@@ -96,7 +97,7 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
                         Tab.VEICOLI -> if (vehicles.size < 5) { vm.resetVinLookup(); showNewVehicle = true }
                         Tab.MANUTENZIONE -> showMaintenance = true
                         Tab.SCADENZE -> showReminder = true
-                        else -> if (selected != null) showExpense = true
+                        else -> if (selected != null) { expenseEditor = null; showExpense = true }
                     }
                 }) { Icon(Icons.Default.Add, "Aggiungi") }
             }
@@ -107,7 +108,7 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
                 vehicles.isEmpty() -> EmptyState("Aggiungi il primo veicolo", "Puoi gestire fino a 5 veicoli in AUTOMICOSTA.")
                 tab == Tab.HOME -> Dashboard(selected!!, expenses, maintenance, reminders.size, { tab = Tab.MANUTENZIONE }, { tab = Tab.SCADENZE })
                 tab == Tab.VEICOLI -> VehicleList(vehicles, selected?.id, { selectedId = it.id; vm.selectVehicle(it.id) }, { vm.resetVinLookup(); vehicleEditor = it }, { vehicleToDelete = it }) { if (vehicles.size < 5) { vm.resetVinLookup(); showNewVehicle = true } }
-                tab == Tab.SPESE -> ExpenseList(expenses)
+                tab == Tab.SPESE -> ExpenseList(expenses) { expenseEditor = it }
                 tab == Tab.MANUTENZIONE -> MaintenanceList(maintenance)
                 tab == Tab.SCADENZE -> ReminderList(reminders.map { it.title to Pair(it.dueKm, it.dueEpochDay) })
             }
@@ -136,10 +137,28 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
     }
 
     if (showExpense && selected != null) {
-        AddExpenseDialog({ showExpense = false }) { category, amount, km, qty, unitPrice, note, date ->
+        ExpenseEditorDialog(existing = null, onDismiss = { showExpense = false }) { category, amount, km, qty, unitPrice, note, date ->
             vm.addExpense(selected.id, category, amount, km, qty, unitPrice, note, parseDate(date)); showExpense = false
         }
     }
+
+    expenseEditor?.let { expense ->
+        ExpenseEditorDialog(existing = expense, onDismiss = { expenseEditor = null }) { category, amount, km, qty, unitPrice, note, date ->
+            vm.updateExpense(
+                expense.copy(
+                    dateEpochDay = parseDate(date),
+                    category = category,
+                    amount = amount,
+                    odometerKm = km,
+                    litersOrKwh = qty,
+                    unitPrice = unitPrice,
+                    note = note
+                )
+            )
+            expenseEditor = null
+        }
+    }
+
     if (showMaintenance && selected != null) AddMaintenanceDialog(selected.id, { showMaintenance = false }) { vm.addMaintenance(it); showMaintenance = false }
     if (showReminder && selected != null) AddReminderDialog({ showReminder = false }) { title, km, date -> vm.addReminder(selected.id, title, km, date?.let(::parseDate)); showReminder = false }
 }
@@ -320,9 +339,30 @@ private fun AddMaintenanceDialog(vehicleId: Long, onDismiss: () -> Unit, onSave:
 }
 
 @Composable
-private fun ExpenseList(expenses: List<ExpenseEntity>) {
+private fun ExpenseList(expenses: List<ExpenseEntity>, onEdit: (ExpenseEntity) -> Unit) {
     if (expenses.isEmpty()) { EmptyState("Nessuna spesa", "Tocca + per registrare il primo costo."); return }
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { item { Text("Spese", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black) }; items(expenses, key = { it.id }) { e -> ElevatedCard(Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(e.category, fontWeight = FontWeight.SemiBold); Text("${formatDate(e.dateEpochDay)}${e.odometerKm?.let { " · $it km" }.orEmpty()}${e.note.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}", style = MaterialTheme.typography.bodySmall) }; Text(euro(e.amount), fontWeight = FontWeight.Bold) } } } }
+    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item { Text("Spese", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black) }
+        items(expenses, key = { it.id }) { e ->
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(e.category, fontWeight = FontWeight.SemiBold)
+                            Text("${formatDate(e.dateEpochDay)}${e.odometerKm?.let { " · $it km" }.orEmpty()}${e.note.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}", style = MaterialTheme.typography.bodySmall)
+                            if ((e.category == "Carburante" || e.category == "Ricarica") && (e.litersOrKwh != null || e.unitPrice != null)) {
+                                Text(listOfNotNull(e.litersOrKwh?.let { if (e.category == "Ricarica") "$it kWh" else "$it L" }, e.unitPrice?.let { if (e.category == "Ricarica") "${euro(it)}/kWh" else "${euro(it)}/L" }).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        Text(euro(e.amount), fontWeight = FontWeight.Bold)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { onEdit(e) }) { Text("Modifica") }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -337,9 +377,44 @@ private fun MetricCard(title: String, value: String, subtitle: String, onClick: 
 @Composable private fun EmptyState(title: String, subtitle: String) { Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text("🚘", style = MaterialTheme.typography.displayMedium); Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black); Spacer(Modifier.height(6.dp)); Text(subtitle) } } }
 
 @Composable
-private fun AddExpenseDialog(onDismiss: () -> Unit, onSave: (String, Double, Int?, Double?, Double?, String, String) -> Unit) {
-    var category by remember { mutableStateOf("Carburante") }; var amount by remember { mutableStateOf("") }; var km by remember { mutableStateOf("") }; var quantity by remember { mutableStateOf("") }; var unitPrice by remember { mutableStateOf("") }; var note by remember { mutableStateOf("") }; var date by remember { mutableStateOf(today()) }; var expanded by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Aggiungi spesa") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { ExposedDropdownMenuBox(expanded, { expanded = !expanded }) { OutlinedTextField(category, {}, readOnly = true, label = { Text("Categoria") }, modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()); ExposedDropdownMenu(expanded, { expanded = false }) { defaultCategories.forEach { c -> DropdownMenuItem({ Text(c) }, { category = c; expanded = false }) } } }; OutlinedTextField(date, { date = it }, label = { Text("Data gg/mm/aaaa") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(amount, { amount = normalizeNumber(it) }, label = { Text("Importo €") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(km, { km = it.filter(Char::isDigit) }, label = { Text("Contachilometri") }, modifier = Modifier.fillMaxWidth()); if (category == "Carburante" || category == "Ricarica") { OutlinedTextField(quantity, { quantity = normalizeNumber(it) }, label = { Text(if (category == "Ricarica") "kWh" else "Litri") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(unitPrice, { unitPrice = normalizeNumber(it) }, label = { Text(if (category == "Ricarica") "€/kWh" else "€/litro") }, modifier = Modifier.fillMaxWidth()) }; OutlinedTextField(note, { note = it }, label = { Text("Nota") }, modifier = Modifier.fillMaxWidth()) } }, confirmButton = { TextButton(enabled = amount.toDoubleOrNull() != null, onClick = { onSave(category, amount.toDoubleOrNull() ?: 0.0, km.toIntOrNull(), quantity.toDoubleOrNull(), unitPrice.toDoubleOrNull(), note, date) }) { Text("Salva") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } })
+private fun ExpenseEditorDialog(existing: ExpenseEntity?, onDismiss: () -> Unit, onSave: (String, Double, Int?, Double?, Double?, String, String) -> Unit) {
+    var category by remember(existing) { mutableStateOf(existing?.category ?: "Carburante") }
+    var amount by remember(existing) { mutableStateOf(existing?.amount?.toString().orEmpty()) }
+    var km by remember(existing) { mutableStateOf(existing?.odometerKm?.toString().orEmpty()) }
+    var quantity by remember(existing) { mutableStateOf(existing?.litersOrKwh?.toString().orEmpty()) }
+    var unitPrice by remember(existing) { mutableStateOf(existing?.unitPrice?.toString().orEmpty()) }
+    var note by remember(existing) { mutableStateOf(existing?.note.orEmpty()) }
+    var date by remember(existing) { mutableStateOf(existing?.let { formatDate(it.dateEpochDay) } ?: today()) }
+    var expanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existing == null) "Aggiungi spesa" else "Modifica spesa") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ExposedDropdownMenuBox(expanded, { expanded = !expanded }) {
+                    OutlinedTextField(category, {}, readOnly = true, label = { Text("Categoria") }, modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth())
+                    ExposedDropdownMenu(expanded, { expanded = false }) {
+                        defaultCategories.forEach { c -> DropdownMenuItem({ Text(c) }, { category = c; expanded = false }) }
+                    }
+                }
+                OutlinedTextField(date, { date = it }, label = { Text("Data gg/mm/aaaa") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(amount, { amount = normalizeNumber(it) }, label = { Text("Importo €") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(km, { km = it.filter(Char::isDigit) }, label = { Text("Contachilometri") }, modifier = Modifier.fillMaxWidth())
+                if (category == "Carburante" || category == "Ricarica") {
+                    OutlinedTextField(quantity, { quantity = normalizeNumber(it) }, label = { Text(if (category == "Ricarica") "kWh" else "Litri") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(unitPrice, { unitPrice = normalizeNumber(it) }, label = { Text(if (category == "Ricarica") "€/kWh" else "€/litro") }, modifier = Modifier.fillMaxWidth())
+                }
+                OutlinedTextField(note, { note = it }, label = { Text("Nota") }, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = amount.toDoubleOrNull() != null, onClick = { onSave(category, amount.toDoubleOrNull() ?: 0.0, km.toIntOrNull(), quantity.toDoubleOrNull(), unitPrice.toDoubleOrNull(), note, date) }) {
+                Text(if (existing == null) "Salva" else "Salva modifiche")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } }
+    )
 }
 
 @Composable
