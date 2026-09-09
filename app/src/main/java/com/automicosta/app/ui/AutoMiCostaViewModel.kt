@@ -86,6 +86,10 @@ class AutoMiCostaViewModel(private val dao: AutoMiCostaDao) : ViewModel() {
         }
     }
 
+    fun updateExpense(expense: ExpenseEntity) {
+        viewModelScope.launch { dao.insertExpense(expense) }
+    }
+
     fun addMaintenance(item: MaintenanceEntity) {
         viewModelScope.launch { dao.insertMaintenance(item) }
     }
