@@ -31,7 +31,7 @@ interface AutoMiCostaDao {
     @Query("SELECT * FROM expenses ORDER BY id")
     suspend fun getAllExpenses(): List<ExpenseEntity>
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertExpense(expense: ExpenseEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
