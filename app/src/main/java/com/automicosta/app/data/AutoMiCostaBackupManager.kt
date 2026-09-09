@@ -65,7 +65,7 @@ object AutoMiCostaBackupManager {
     private fun vehicleToJson(v: VehicleEntity) = JSONObject().apply {
         put("id", v.id); put("nickname", v.nickname); put("brand", v.brand); put("model", v.model)
         put("plate", v.plate); put("vin", v.vin); putNullable("registrationYear", v.registrationYear)
-        put("firstRegistrationDate", v.firstRegistrationDate); put("fuelType", v.fuelType); put("currentKm", v.currentKm)
+        put("firstRegistrationDate", v.firstRegistrationDate); put("inspectionDate", v.inspectionDate); put("fuelType", v.fuelType); put("currentKm", v.currentKm)
         put("purchaseDate", v.purchaseDate); putNullable("purchasePrice", v.purchasePrice); put("tireCount", v.tireCount)
         put("frontTireSize", v.frontTireSize); put("rearTireSize", v.rearTireSize)
         putNullable("engineDisplacementCc", v.engineDisplacementCc); putNullable("powerKw", v.powerKw)
@@ -93,7 +93,7 @@ object AutoMiCostaBackupManager {
     private fun jsonToVehicle(o: JSONObject) = VehicleEntity(
         id = o.getLong("id"), nickname = o.optString("nickname"), brand = o.optString("brand"), model = o.optString("model"),
         plate = o.optString("plate"), vin = o.optString("vin"), registrationYear = o.optIntOrNull("registrationYear"),
-        firstRegistrationDate = o.optString("firstRegistrationDate"), fuelType = o.optString("fuelType", "Benzina"), currentKm = o.optInt("currentKm", 0),
+        firstRegistrationDate = o.optString("firstRegistrationDate"), inspectionDate = o.optString("inspectionDate"), fuelType = o.optString("fuelType", "Benzina"), currentKm = o.optInt("currentKm", 0),
         purchaseDate = o.optString("purchaseDate"), purchasePrice = o.optDoubleOrNull("purchasePrice"), tireCount = o.optInt("tireCount", 4),
         frontTireSize = o.optString("frontTireSize"), rearTireSize = o.optString("rearTireSize"), engineDisplacementCc = o.optIntOrNull("engineDisplacementCc"),
         powerKw = o.optDoubleOrNull("powerKw"), bodyType = o.optString("bodyType"), color = o.optString("color"),

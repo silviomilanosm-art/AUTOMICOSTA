@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [VehicleEntity::class, ExpenseEntity::class, ReminderEntity::class, MaintenanceEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AutoMiCostaDatabase : RoomDatabase() {
@@ -53,12 +53,18 @@ abstract class AutoMiCostaDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE vehicles ADD COLUMN inspectionDate TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): AutoMiCostaDatabase = INSTANCE ?: synchronized(this) {
             INSTANCE ?: Room.databaseBuilder(
                 context.applicationContext,
                 AutoMiCostaDatabase::class.java,
                 "automicosta.db"
-            ).addMigrations(MIGRATION_1_2).build().also { INSTANCE = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { INSTANCE = it }
         }
     }
 }

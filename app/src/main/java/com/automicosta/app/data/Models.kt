@@ -13,6 +13,7 @@ data class VehicleEntity(
     val vin: String = "",
     val registrationYear: Int? = null,
     val firstRegistrationDate: String = "",
+    val inspectionDate: String = "",
     val fuelType: String = "Benzina",
     val currentKm: Int = 0,
     val purchaseDate: String = "",
