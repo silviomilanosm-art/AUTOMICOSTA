@@ -94,6 +94,26 @@ class AutoMiCostaViewModel(private val dao: AutoMiCostaDao) : ViewModel() {
         viewModelScope.launch { dao.insertMaintenance(item) }
     }
 
+    fun importKiaVengaEcoGplHistory(vehicleId: Long, onResult: (Int) -> Unit = {}) {
+        viewModelScope.launch {
+            val existing = dao.getAllMaintenance().filter { it.vehicleId == vehicleId }
+            var inserted = 0
+            kiaVengaEcoGplHistory(vehicleId).forEach { item ->
+                val duplicate = existing.any { current ->
+                    current.dateEpochDay == item.dateEpochDay &&
+                        current.component == item.component &&
+                        current.odometerKm == item.odometerKm &&
+                        current.workshop == item.workshop
+                }
+                if (!duplicate) {
+                    dao.insertMaintenance(item)
+                    inserted++
+                }
+            }
+            onResult(inserted)
+        }
+    }
+
     fun addReminder(vehicleId: Long, title: String, dueKm: Int?, dueEpochDay: Long?) {
         viewModelScope.launch {
             dao.insertReminder(ReminderEntity(vehicleId = vehicleId, title = title, dueKm = dueKm, dueEpochDay = dueEpochDay))

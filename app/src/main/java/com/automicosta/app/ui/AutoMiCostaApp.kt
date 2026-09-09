@@ -67,6 +67,8 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
     var vehicleEditor by remember { mutableStateOf<VehicleEntity?>(null) }
     var showNewVehicle by remember { mutableStateOf(false) }
     var vehicleToDelete by remember { mutableStateOf<VehicleEntity?>(null) }
+    var showKiaHistoryImport by remember { mutableStateOf(false) }
+    var kiaImportResult by remember { mutableStateOf<Int?>(null) }
 
     if (vehicles.isEmpty() && !showNewVehicle) showNewVehicle = true
 
@@ -111,7 +113,7 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
                 tab == Tab.HOME -> Dashboard(selected!!, expenses, maintenance, reminders.size, { tab = Tab.MANUTENZIONE }, { tab = Tab.SCADENZE })
                 tab == Tab.VEICOLI -> VehicleList(vehicles, selected?.id, { selectedId = it.id; vm.selectVehicle(it.id) }, { vm.resetVinLookup(); vehicleEditor = it }, { vehicleToDelete = it }) { if (vehicles.size < 5) { vm.resetVinLookup(); showNewVehicle = true } }
                 tab == Tab.SPESE -> ExpenseList(expenses) { expenseEditor = it }
-                tab == Tab.MANUTENZIONE -> MaintenanceList(maintenance)
+                tab == Tab.MANUTENZIONE -> MaintenanceList(maintenance) { showKiaHistoryImport = true }
                 tab == Tab.MANUALE -> WorkshopManualScreen()
                 tab == Tab.SCADENZE -> ReminderList(reminders.map { it.title to Pair(it.dueKm, it.dueEpochDay) })
             }
@@ -160,6 +162,30 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
             )
             expenseEditor = null
         }
+    }
+
+    if (showKiaHistoryImport && selected != null) {
+        AlertDialog(
+            onDismissRequest = { showKiaHistoryImport = false },
+            title = { Text("Importare storico Kia Venga EcoGPL?") },
+            text = { Text("Verranno aggiunte al veicolo ${selected.nickname} le manutenzioni documentate dal 2015 al 2026. Le voci già presenti con stessa data, intervento, km e officina saranno saltate.") },
+            confirmButton = {
+                Button(onClick = {
+                    vm.importKiaVengaEcoGplHistory(selected.id) { count -> kiaImportResult = count }
+                    showKiaHistoryImport = false
+                }) { Text("Importa storico") }
+            },
+            dismissButton = { TextButton(onClick = { showKiaHistoryImport = false }) { Text("Annulla") } }
+        )
+    }
+
+    kiaImportResult?.let { count ->
+        AlertDialog(
+            onDismissRequest = { kiaImportResult = null },
+            title = { Text("Importazione completata") },
+            text = { Text(if (count > 0) "$count interventi aggiunti allo storico." else "Nessun nuovo intervento da aggiungere: lo storico risulta già importato.") },
+            confirmButton = { TextButton(onClick = { kiaImportResult = null }) { Text("OK") } }
+        )
     }
 
     if (showMaintenance && selected != null) AddMaintenanceDialog(selected.id, { showMaintenance = false }) { vm.addMaintenance(it); showMaintenance = false }
@@ -320,10 +346,17 @@ private fun VehicleEditorDialog(existing: VehicleEntity?, vinState: VinLookupSta
 }
 
 @Composable
-private fun MaintenanceList(items: List<MaintenanceEntity>) {
-    if (items.isEmpty()) { EmptyState("Nessuna manutenzione", "Tocca + per registrare ricambi, revisioni, lampadine e qualsiasi intervento."); return }
+private fun MaintenanceList(items: List<MaintenanceEntity>, onImportKiaHistory: () -> Unit) {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Storico manutenzione", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black) }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Storico manutenzione", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                FilledTonalButton(onClick = onImportKiaHistory, modifier = Modifier.fillMaxWidth()) {
+                    Text("Importa storico Kia Venga EcoGPL 2015–2026")
+                }
+                if (items.isEmpty()) Text("Nessuna manutenzione registrata. Puoi importare lo storico Kia oppure usare + per aggiungere un intervento.", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
         items(items, key = { it.id }) { m -> ElevatedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Row { Text("🔧 ${m.component}", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); Text(euro(m.cost), fontWeight = FontWeight.Bold) }; Text("${m.workType} · ${formatDate(m.dateEpochDay)}${m.odometerKm?.let { " · $it km" }.orEmpty()}", style = MaterialTheme.typography.bodySmall); if (m.workshop.isNotBlank()) Text("Officina: ${m.workshop}", style = MaterialTheme.typography.bodySmall); if (m.partBrand.isNotBlank() || m.partCode.isNotBlank()) Text("Ricambio: ${listOf(m.partBrand, m.partCode).filter { it.isNotBlank() }.joinToString(" · ")}", style = MaterialTheme.typography.bodySmall); if (m.nextDueKm != null || m.nextDueEpochDay != null) Text("Prossimo: ${m.nextDueKm?.let { "$it km" }.orEmpty()} ${m.nextDueEpochDay?.let { formatDate(it) }.orEmpty()}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall); if (m.note.isNotBlank()) Text(m.note, style = MaterialTheme.typography.bodySmall) } } }
     }
 }
@@ -433,5 +466,5 @@ private fun normalizeNumber(value: String): String = value.replace(',', '.').fil
 private fun euro(value: Double): String = NumberFormat.getCurrencyInstance(Locale.ITALY).apply { currency = Currency.getInstance("EUR") }.format(value)
 private fun today(): String = SimpleDateFormat("dd/MM/yyyy", Locale.ITALY).format(Date())
 private fun parseDate(value: String): Long = runCatching { (SimpleDateFormat("dd/MM/yyyy", Locale.ITALY).apply { isLenient = false }.parse(value)?.time ?: System.currentTimeMillis()) / 86_400_000L }.getOrDefault(System.currentTimeMillis() / 86_400_000L)
-private fun formatDate(epochDay: Long): String = SimpleDateFormat("dd/MM/yyyy", Locale.ITALY).format(Date(epochDay * 86_400_000L))
+private fun formatDate(epochDay: Long): String = when { epochDay == -1L -> "Data non indicata"; epochDay in -3000L..-1900L -> "${-epochDay} (data parziale)"; else -> SimpleDateFormat("dd/MM/yyyy", Locale.ITALY).format(Date(epochDay * 86_400_000L)) }
 private fun hashPin(pin: String): String = MessageDigest.getInstance("SHA-256").digest(pin.toByteArray()).joinToString("") { "%02x".format(it) }
