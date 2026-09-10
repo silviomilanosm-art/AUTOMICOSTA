@@ -63,6 +63,7 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
     var showExpense by remember { mutableStateOf(false) }
     var expenseEditor by remember { mutableStateOf<ExpenseEntity?>(null) }
     var showMaintenance by remember { mutableStateOf(false) }
+    var maintenanceEditor by remember { mutableStateOf<MaintenanceEntity?>(null) }
     var showReminder by remember { mutableStateOf(false) }
     var vehicleEditor by remember { mutableStateOf<VehicleEntity?>(null) }
     var showNewVehicle by remember { mutableStateOf(false) }
@@ -113,7 +114,7 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
                 tab == Tab.HOME -> Dashboard(selected!!, expenses, maintenance, reminders.size, { tab = Tab.MANUTENZIONE }, { tab = Tab.SCADENZE })
                 tab == Tab.VEICOLI -> VehicleList(vehicles, selected?.id, { selectedId = it.id; vm.selectVehicle(it.id) }, { vm.resetVinLookup(); vehicleEditor = it }, { vehicleToDelete = it }) { if (vehicles.size < 5) { vm.resetVinLookup(); showNewVehicle = true } }
                 tab == Tab.SPESE -> ExpenseList(expenses) { expenseEditor = it }
-                tab == Tab.MANUTENZIONE -> MaintenanceList(maintenance) { showKiaHistoryImport = true }
+                tab == Tab.MANUTENZIONE -> MaintenanceList(maintenance, { showKiaHistoryImport = true }) { maintenanceEditor = it }
                 tab == Tab.MANUALE -> WorkshopManualScreen()
                 tab == Tab.SCADENZE -> ReminderList(reminders.map { it.title to Pair(it.dueKm, it.dueEpochDay) })
             }
@@ -188,7 +189,8 @@ fun AutoMiCostaApp(vm: AutoMiCostaViewModel) {
         )
     }
 
-    if (showMaintenance && selected != null) AddMaintenanceDialog(selected.id, { showMaintenance = false }) { vm.addMaintenance(it); showMaintenance = false }
+    if (showMaintenance && selected != null) MaintenanceEditorDialog(null, selected.id, { showMaintenance = false }) { vm.addMaintenance(it); showMaintenance = false }
+    maintenanceEditor?.let { item -> MaintenanceEditorDialog(item, item.vehicleId, { maintenanceEditor = null }) { vm.updateMaintenance(it); maintenanceEditor = null } }
     if (showReminder && selected != null) AddReminderDialog({ showReminder = false }) { title, km, date -> vm.addReminder(selected.id, title, km, date?.let(::parseDate)); showReminder = false }
 }
 
@@ -346,7 +348,7 @@ private fun VehicleEditorDialog(existing: VehicleEntity?, vinState: VinLookupSta
 }
 
 @Composable
-private fun MaintenanceList(items: List<MaintenanceEntity>, onImportKiaHistory: () -> Unit) {
+private fun MaintenanceList(items: List<MaintenanceEntity>, onImportKiaHistory: () -> Unit, onEdit: (MaintenanceEntity) -> Unit) {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -357,14 +359,14 @@ private fun MaintenanceList(items: List<MaintenanceEntity>, onImportKiaHistory: 
                 if (items.isEmpty()) Text("Nessuna manutenzione registrata. Puoi importare lo storico Kia oppure usare + per aggiungere un intervento.", style = MaterialTheme.typography.bodyMedium)
             }
         }
-        items(items, key = { it.id }) { m -> ElevatedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Row { Text("🔧 ${m.component}", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); Text(euro(m.cost), fontWeight = FontWeight.Bold) }; Text("${m.workType} · ${formatDate(m.dateEpochDay)}${m.odometerKm?.let { " · $it km" }.orEmpty()}", style = MaterialTheme.typography.bodySmall); if (m.workshop.isNotBlank()) Text("Officina: ${m.workshop}", style = MaterialTheme.typography.bodySmall); if (m.partBrand.isNotBlank() || m.partCode.isNotBlank()) Text("Ricambio: ${listOf(m.partBrand, m.partCode).filter { it.isNotBlank() }.joinToString(" · ")}", style = MaterialTheme.typography.bodySmall); if (m.nextDueKm != null || m.nextDueEpochDay != null) Text("Prossimo: ${m.nextDueKm?.let { "$it km" }.orEmpty()} ${m.nextDueEpochDay?.let { formatDate(it) }.orEmpty()}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall); if (m.note.isNotBlank()) Text(m.note, style = MaterialTheme.typography.bodySmall) } } }
+        items(items, key = { it.id }) { m -> ElevatedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Row { Text("🔧 ${m.component}", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); Text(euro(m.cost), fontWeight = FontWeight.Bold) }; Text("${m.workType} · ${formatDate(m.dateEpochDay)}${m.odometerKm?.let { " · $it km" }.orEmpty()}", style = MaterialTheme.typography.bodySmall); if (m.workshop.isNotBlank()) Text("Officina: ${m.workshop}", style = MaterialTheme.typography.bodySmall); if (m.partBrand.isNotBlank() || m.partCode.isNotBlank()) Text("Ricambio: ${listOf(m.partBrand, m.partCode).filter { it.isNotBlank() }.joinToString(" · ")}", style = MaterialTheme.typography.bodySmall); if (m.nextDueKm != null || m.nextDueEpochDay != null) Text("Prossimo: ${m.nextDueKm?.let { "$it km" }.orEmpty()} ${m.nextDueEpochDay?.let { formatDate(it) }.orEmpty()}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall); if (m.note.isNotBlank()) Text(m.note, style = MaterialTheme.typography.bodySmall); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { onEdit(m) }) { Text("Modifica") } } } } }
     }
 }
 
 @Composable
-private fun AddMaintenanceDialog(vehicleId: Long, onDismiss: () -> Unit, onSave: (MaintenanceEntity) -> Unit) {
-    var component by remember { mutableStateOf("Tagliando completo") }; var workType by remember { mutableStateOf("Sostituzione") }; var date by remember { mutableStateOf(today()) }; var cost by remember { mutableStateOf("") }; var km by remember { mutableStateOf("") }; var workshop by remember { mutableStateOf("") }; var partBrand by remember { mutableStateOf("") }; var partCode by remember { mutableStateOf("") }; var nextDate by remember { mutableStateOf("") }; var nextKm by remember { mutableStateOf("") }; var note by remember { mutableStateOf("") }; var expanded by remember { mutableStateOf(false) }
-    Dialog(onDismissRequest = onDismiss) { Surface(Modifier.fillMaxWidth().fillMaxHeight(0.9f), shape = RoundedCornerShape(24.dp)) { Column { Text("Registra manutenzione", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, modifier = Modifier.padding(20.dp)); LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+private fun MaintenanceEditorDialog(existing: MaintenanceEntity?, vehicleId: Long, onDismiss: () -> Unit, onSave: (MaintenanceEntity) -> Unit) {
+    var component by remember(existing) { mutableStateOf(existing?.component ?: "Tagliando completo") }; var workType by remember(existing) { mutableStateOf(existing?.workType ?: "Sostituzione") }; var date by remember(existing) { mutableStateOf(existing?.let { formatDate(it.dateEpochDay) } ?: today()) }; var cost by remember(existing) { mutableStateOf(existing?.cost?.toString().orEmpty()) }; var km by remember(existing) { mutableStateOf(existing?.odometerKm?.toString().orEmpty()) }; var workshop by remember(existing) { mutableStateOf(existing?.workshop.orEmpty()) }; var partBrand by remember(existing) { mutableStateOf(existing?.partBrand.orEmpty()) }; var partCode by remember(existing) { mutableStateOf(existing?.partCode.orEmpty()) }; var nextDate by remember(existing) { mutableStateOf(existing?.nextDueEpochDay?.let(::formatDate).orEmpty()) }; var nextKm by remember(existing) { mutableStateOf(existing?.nextDueKm?.toString().orEmpty()) }; var note by remember(existing) { mutableStateOf(existing?.note.orEmpty()) }; var expanded by remember { mutableStateOf(false) }
+    Dialog(onDismissRequest = onDismiss) { Surface(Modifier.fillMaxWidth().fillMaxHeight(0.9f), shape = RoundedCornerShape(24.dp)) { Column { Text(if (existing == null) "Registra manutenzione" else "Modifica manutenzione", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, modifier = Modifier.padding(20.dp)); LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { ExposedDropdownMenuBox(expanded, { expanded = !expanded }) { OutlinedTextField(component, {}, readOnly = true, label = { Text("Componente/intervento") }, modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()); ExposedDropdownMenu(expanded, { expanded = false }) { maintenanceComponents.forEach { c -> DropdownMenuItem({ Text(c) }, { component = c; expanded = false }) } } } }
         item { OutlinedTextField(workType, { workType = it }, label = { Text("Tipo lavoro / esito revisione") }, modifier = Modifier.fillMaxWidth()) }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(date, { date = it }, label = { Text("Data gg/mm/aaaa") }, modifier = Modifier.weight(1f)); OutlinedTextField(km, { km = it.filter(Char::isDigit) }, label = { Text("Km") }, modifier = Modifier.weight(1f)) } }
@@ -374,7 +376,7 @@ private fun AddMaintenanceDialog(vehicleId: Long, onDismiss: () -> Unit, onSave:
         item { Text("Prossimo controllo/sostituzione/revisione", fontWeight = FontWeight.Bold) }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(nextDate, { nextDate = it }, label = { Text("Data (opz.)") }, modifier = Modifier.weight(1f)); OutlinedTextField(nextKm, { nextKm = it.filter(Char::isDigit) }, label = { Text("Km (opz.)") }, modifier = Modifier.weight(1f)) } }
         item { OutlinedTextField(note, { note = it }, label = { Text("Note") }, minLines = 3, modifier = Modifier.fillMaxWidth()) }
-    }; Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.End) { TextButton(onClick = onDismiss) { Text("Annulla") }; Button(onClick = { onSave(MaintenanceEntity(vehicleId = vehicleId, dateEpochDay = parseDate(date), component = component, workType = workType, cost = cost.toDoubleOrNull() ?: 0.0, odometerKm = km.toIntOrNull(), workshop = workshop, partBrand = partBrand, partCode = partCode, nextDueEpochDay = nextDate.takeIf { it.isNotBlank() }?.let(::parseDate), nextDueKm = nextKm.toIntOrNull(), note = note)) }) { Text("Registra") } } } } }
+    }; Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.End) { TextButton(onClick = onDismiss) { Text("Annulla") }; Button(onClick = { onSave(MaintenanceEntity(id = existing?.id ?: 0, vehicleId = vehicleId, dateEpochDay = parseDate(date), component = component, workType = workType, cost = cost.toDoubleOrNull() ?: 0.0, odometerKm = km.toIntOrNull(), workshop = workshop, partBrand = partBrand, partCode = partCode, nextDueEpochDay = nextDate.takeIf { it.isNotBlank() }?.let(::parseDate), nextDueKm = nextKm.toIntOrNull(), note = note)) }) { Text(if (existing == null) "Registra" else "Salva modifiche") } } } } }
 }
 
 @Composable
