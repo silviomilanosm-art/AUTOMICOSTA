@@ -58,7 +58,7 @@ interface AutoMiCostaDao {
     @Query("SELECT * FROM maintenance ORDER BY id")
     suspend fun getAllMaintenance(): List<MaintenanceEntity>
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMaintenance(item: MaintenanceEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
